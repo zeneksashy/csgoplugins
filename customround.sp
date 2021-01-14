@@ -143,7 +143,8 @@ public void OnPluginStart()
 
 public void OnMapStart()
 {
-	ServerCommand("mp_startmoney  16000");
+	ServerCommand("mp_startmoney 16000");
+	ServerCommand("mp_roundtime_defuse 0.5");
 	votes = 0;
 	customModeTurnedOn = false;
 	customRoundStarted = false;
@@ -155,15 +156,14 @@ public void OnMapStart()
 }
 public void OnMapEnd()
 {
-	PrintToServer("Settings max money to 16000");
-	ServerCommand("mp_startmoney  16000");
+	
 }
 
 public Action CS_OnBuyCommand(int iClient, const char[] chWeapon)
 {
 	if(_mode == NoShootingMode)
 		return Plugin_Handled;
-	if(_mode < CustomConfigMode && customRoundStarted)
+	if(_mode < NoShootingMode && customRoundStarted)
 	{
 		const int array_size = 13;
 		char allowed[array_size][] = {"vest",
@@ -227,6 +227,8 @@ public void Event_RoundEnd(Event event, const char[] name, bool dontBroadcast)
 		{
 			PrintToServer("Restarting the game");
 			ConVar command = FindConVar("mp_startmoney");
+			ResetConVar(command);
+			command = FindConVar("mp_roundtime_defuse");
 			ResetConVar(command);
 			ServerCommand("mp_restartgame 1");
 		}
