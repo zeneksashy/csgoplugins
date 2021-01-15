@@ -16,8 +16,8 @@ enum CustomMode
 }
 
 int votes = 0;
-bool customModeTurnedOn =false;
-bool customRoundStarted =false;
+bool customModeTurnedOn = false;
+bool customRoundStarted = false;
 int currentModeIndex = 0;
 CustomMode _mode;
 bool voteInProgress = false;
@@ -202,8 +202,8 @@ public void Event_RoundStart(Event event, const char[] name, bool dontBroadcast)
 {
 	if(warmupRounds)
 	{
-		_mode = g_modeType[currentModeIndex];
 		currentModeIndex = warmupRounds;
+		_mode = g_modeType[currentModeIndex];
 		PrintToServer("%d Warmup rounds left",warmupRounds);
 		customModeTurnedOn = true;
 	}
@@ -272,7 +272,7 @@ void ClientOperations()
 		{
 			if(IsPlayerAlive(i))
 			{
-				if(_mode <CustomConfigMode)
+				if(_mode < Default)
 				{
 					SinglePlayerWeaponOperations(i);
 				}
@@ -283,12 +283,13 @@ void ClientOperations()
 
 void SinglePlayerWeaponOperations(int i)
 {
-	for (int j = 0; j <= _mode; j++)
-	{
-		int index = GetPlayerWeaponSlot(i,j);
-		if(index != -1)
-			RemovePlayerItem(i,index);
-	}
+	if(_mode <CustomConfigMode)
+		for (int j = 0; j <= _mode; j++)
+		{
+			int index = GetPlayerWeaponSlot(i,j);
+			if(index != -1)
+				RemovePlayerItem(i,index);
+		}
 	for(int j = 0; j < MODE_EXECS_SIZE; ++j)
 		GivePlayerItem(i,g_execs[currentModeIndex][j]);
 }
@@ -387,7 +388,7 @@ public Action StartVoteMenu(int client, int args)
 
 	for(int i = 0;i < MODE_NAME_SIZE;++i)
 	{
-		if(strcmp(g_modeName[i],"")! = 0)
+		if(strcmp(g_modeName[i],"") != 0)
 			menu.AddItem(g_modeName[i], g_modeName[i]);
 	}
     
