@@ -129,7 +129,7 @@ public void OnPluginStart()
 {
 	read_config();
 	PrintToServer("Hello world!");
-	RegConsoleCmd("menu_test", StartVote);
+	RegConsoleCmd("custom_reload", ReloadPlugin);
 	AddCommandListener(ChatListener, "say");
 	AddCommandListener(ChatListener, "say2");
 	AddCommandListener(ChatListener, "say_team");
@@ -140,7 +140,7 @@ public void OnPluginStart()
 	
 	_mode = Default;
 	
-	g_voteMaxPlayers = CreateConVar("maxplayers_for_vote","8","Sets a vote ratio");
+	g_voteMaxPlayers = CreateConVar("maxplayers_for_vote","9","Sets a vote ratio");
 	g_warmupRounds = CreateConVar("warmup_rounds","4","Sets a warmup rounds count");
 	g_vipPluginEnabled = CreateConVar("vip_plugin_enabled", "1", "Wheater Advaned vip plugin should be reseted after warmup");
 	
@@ -202,7 +202,7 @@ public void Event_PlayerJoinedTeam(Event event, const char[] name, bool dontBroa
 {
 	if(customRoundStarted)
 	{
-		SinglePlayerWeaponOperations(GetClientOfUserId(event.GetInt("userid")));
+		PlayerCheckAndUpdateWeaponOperation(GetClientOfUserId(event.GetInt("userid")));
 	}
 }
 
@@ -239,19 +239,13 @@ public void Event_RoundEnd(Event event, const char[] name, bool dontBroadcast)
 		if(warmupRounds == 0)
 		{
 			PrintToChatAll("Restarting the game");
-			ConVar command = FindConVar("mp_startmoney");
-			ResetConVar(command);
-			command = FindConVar("mp_roundtime_defuse");
-			ResetConVar(command);
-			command = FindConVar("mp_freezetime");
-			ResetConVar(command);
 			if(g_vipPluginEnabled.IntValue == 1)
 			{
-				command = FindConVar("sm plugin reload H2K_VipNormalMode")
-				ResetConVar(command);
+				 ServerCommand("sm plugins reload H2K_VipNormalMode")
 			}
-			
-			ServerCommand("mp_restartgame 1");
+            
+            ServerCommand("exec gamemode_competitive.cfg");
+            ServerCommand("mp_restartgame 1");
 		}
 	}
 	if(customRoundStarted && !customModeTurnedOn)
@@ -291,16 +285,7 @@ void ClientOperations()
 {
 	for (int i = 1; i <= MaxClients; i++)
 	{
-		if(IsValidClient(i))
-		{
-			if(IsPlayerAlive(i))
-			{
-				if(_mode < Default)
-				{
-					SinglePlayerWeaponOperations(i);
-				}
-			}
-		}
+		PlayerCheckAndUpdateWeaponOperation(i);
 	}
 }
 
@@ -351,6 +336,20 @@ stock bool RemoveGranades(int client)
     }
     return false;
 } 
+
+void PlayerCheckAndUpdateWeaponOperation(int i)
+{
+    if(IsValidClient(i))
+		{
+			if(IsPlayerAlive(i))
+			{
+				if(_mode < Default)
+				{
+					SinglePlayerWeaponOperations(i);
+				}
+			}
+		}
+}
 
 void SinglePlayerWeaponOperations(int i)
 {
@@ -434,6 +433,11 @@ public int ClientMenuHandler(Menu menu, MenuAction action, int param1, int param
     }
 }
 
+public Action ReloadPlugin(int client, int args)
+{
+    if(!voteInProgress && warmupRounds <= 0 && !customRoundStarted)
+        ServerCommand("sm plugins reload custom_round");
+}
 
 public Action StartVoteMenu(int client, int args)
 {
