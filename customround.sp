@@ -1,5 +1,6 @@
 #include <sourcemod>
 #include <sdktools>
+#include <sdkhooks>
 #define MODE_NAME_SIZE 32
 #define MODE_EXECS_SIZE 64
 #pragma newdecls required
@@ -15,16 +16,22 @@ enum CustomMode
 }
 
 int votes = 0;
+bool customHealthRound = false;
+bool customNoScopeRound = false;
+bool customRoundFinishing = false;
 bool customModeTurnedOn = false;
 bool customRoundStarted = false;
 int currentModeIndex = 0;
+int voteModeIndex = 0;
 CustomMode _mode;
 bool voteInProgress = false;
 ConVar g_voteMaxPlayers;
 ConVar g_warmupRounds;
 ConVar g_weaponRestrictPluginEnabled;
+//ConVar g_allowDrop;
 int warmupRounds;
-
+int m_flNextSecondaryAttack = -1;
+int hp = 100;
 //todo change that into working array of structures
 char g_modeName[MODE_NAME_SIZE][MODE_NAME_SIZE];
 CustomMode g_modeType[MODE_NAME_SIZE];
@@ -39,7 +46,7 @@ public Plugin myinfo =
     name = "Custom Round plugin",
     author = "Zenek",
     description = "Plugin allows to call vote to make next round use custom settings",
-    version = "1.5",
+    version = "1.6",
     url = "https://github.com/zeneksashy/csgoplugins"
 };
 
@@ -170,12 +177,15 @@ void read_config()
 public void OnPluginStart()
 {
     read_config();
+    m_flNextSecondaryAttack = FindSendPropInfo("CBaseCombatWeapon", "m_flNextSecondaryAttack");
     PrintToServer("Hello world!");
-    RegConsoleCmd("custom_reload", ReloadPlugin);
+    //RegConsoleCmd("custom_reload", ReloadPlugin);
     AddCommandListener(ChatListener, "say");
     AddCommandListener(ChatListener, "say2");
     AddCommandListener(ChatListener, "say_team");
-
+    RegAdminCmd("sm_health", Command_Health, ADMFLAG_GENERIC, "Sets a players HP. Usage: sm_health <ammount>");
+    RegAdminCmd("sm_noscope",Command_NoScope, ADMFLAG_GENERIC, "Sets current round to no scope: sm_noscope <0|1> (0 for scope available, 1 for only noscope>");
+    HookEventEx("entity_visible", entity_visible)
     HookEvent("player_spawn", Event_PlayerSpawn);
     HookEvent("round_prestart",Event_RoundStart);
     HookEvent("round_end",Event_RoundEnd);
@@ -186,6 +196,7 @@ public void OnPluginStart()
     g_voteMaxPlayers = CreateConVar("maxplayers_for_vote","9","Sets a vote ratio");
     g_warmupRounds = CreateConVar("warmup_rounds","4","Sets a warmup rounds count");
     g_weaponRestrictPluginEnabled = CreateConVar("weapon_restrict_disable", "1", "Wheater weapon restrict plugin should be unloaded on custom rounds");
+   // g_allowDrop = CreateConVar("custom_round_allow_drop", 1, "Wheater allow player to drop weapons or not");
 
     warmupRounds = g_warmupRounds.IntValue;
     AutoExecConfig(true);
@@ -235,7 +246,6 @@ public Action CS_OnBuyCommand(int iClient, const char[] chWeapon)
             {
                 return Plugin_Continue;
             }
-        PrintToServer("Blocking the buy of %s",chWeapon);
         return Plugin_Handled;
     }
     return Plugin_Continue;
@@ -250,10 +260,29 @@ public void Event_PlayerJoinedTeam(Event event, const char[] name, bool dontBroa
 }
 public Action Event_PlayerSpawn(Event hEvent, const char[] chName, bool bDontBroadcast)
 {
-    PrintToServer("Player spawn");
+    int client = GetClientOfUserId(GetEventInt(hEvent, "userid"));
+    if (IsClientInGame(client))
+    {
+        SDKUnhook(client, SDKHook_PreThink, OnPreThink);
+    }
+        
     if(customRoundStarted)
     {
-        PrintToServer("Player spawned during custom round");
+        if(customNoScopeRound)
+        {
+            if (IsClientInGame(client))
+            {
+                SDKHook(client, SDKHook_PreThink, OnPreThink);
+            }
+        }
+        if(customHealthRound)
+        {
+            
+            if (IsClientInGame(client))
+            {
+                SetHp(client);
+            }
+        }
         CreateTimer(0.2, TimerPlayerSpawn, GetClientOfUserId(hEvent.GetInt("userid")), TIMER_FLAG_NO_MAPCHANGE);
     }
 }
@@ -264,6 +293,7 @@ public Action TimerPlayerSpawn(Handle timer, int client)
 
 public void Event_RoundStart(Event event, const char[] name, bool dontBroadcast)
 {
+    customRoundFinishing = false;
     PrintToServer("New round started");
     if(warmupRounds)
     {
@@ -280,7 +310,10 @@ public void Event_RoundStart(Event event, const char[] name, bool dontBroadcast)
         customRoundStarted =true;
         voteInProgress = false;
         customModeTurnedOn = false;
-        
+        // if(g_allowDrop.IntValue == 1)
+        // {
+            // ServerCommand("mp_death_drop_gun 0");
+        // }
         //ClientOperations();
         ServerOperations();
         if(g_weaponRestrictPluginEnabled.IntValue == 1)
@@ -289,9 +322,31 @@ public void Event_RoundStart(Event event, const char[] name, bool dontBroadcast)
         }
         PrintToChatAll("╔════════════════════════════════════════╗");
         PrintToChatAll("%s Custom Round Started",g_modeName[currentModeIndex]);
+        PrintToServer("%s Custom Round Started",g_modeName[currentModeIndex]);
         PrintToChatAll("╚════════════════════════════════════════╝");
+        ServerCommand("sm_csay %s Custom Round Started",g_modeName[currentModeIndex]);
     }
 }
+
+public void entity_visible(Event event, const char[] name, bool dontBroadcast)
+{
+
+    if(customRoundFinishing)
+    {
+        char buffer[30];
+        GetEventString(event, "classname", buffer, sizeof(buffer));
+
+        if(StrContains(buffer, "weapon_", false) == 0)
+        {
+            int ref = EntIndexToEntRef(GetEventInt(event, "subject"));
+
+            if(ref != 0 && GetEntProp(ref, Prop_Send, "m_iState") == 0 )
+            {
+                AcceptEntityInput(ref, "Kill");
+            }
+        }
+    }
+} 
 
 public void Event_RoundEnd(Event event, const char[] name, bool dontBroadcast)
 {
@@ -307,6 +362,9 @@ public void Event_RoundEnd(Event event, const char[] name, bool dontBroadcast)
     }
     if(customRoundStarted && !customModeTurnedOn)
     {
+        customHealthRound = false;
+        customNoScopeRound = false;
+        customRoundFinishing = true;
         customRoundStarted = false;
         PrintToChatAll("Custom round finished");
         customModeTurnedOn = false;
@@ -390,14 +448,14 @@ void RemoveWeapons(int client, int weapons)
         }
 
     // Remove grandaes
-    /*if (weapons>=3)
+    if (weapons>=3)
     {
         
         int grenadeOffsets[] = {15, 17, 16, 14, 18, 17};
-        while(RemoveGranades(client)){}
+        //while(RemoveGranades(client)){}
         for(int i = 0; i < sizeof(grenadeOffsets); i++)
             SetEntProp(client, Prop_Send, "m_iAmmo", 0, _, grenadeOffsets[i]);
-    }*/
+    }
 }
 
 stock bool RemoveGranades(int client)
@@ -480,7 +538,7 @@ public int MenuHandler(Menu menu, MenuAction action, int param1, int param2)
     {
         voteInProgress = false;
         delete menu;
-        ChangeMode(g_modeType[param2],param2);
+        ChangeMode(g_modeType[voteModeIndex],voteModeIndex);
     }
 }
 
@@ -492,6 +550,7 @@ public int ClientMenuHandler(Menu menu, MenuAction action, int param1, int param
         char info[32];
         bool found = menu.GetItem(param2, info, sizeof(info));
         PrintToConsole(param1, "You selected item: %d (found? %d info: %s)", param2, found, info);
+        voteModeIndex = param2;
         StartVote(0,0);
     }
     /* If the menu was cancelled, print a message to the server about it. */
@@ -515,6 +574,11 @@ public Action ReloadPlugin(int client, int args)
 
 public Action StartVoteMenu(int client, int args)
 {
+    if(warmupRounds > 0)
+    {
+        PrintToChat(client, "Can't start vote during warmup round");
+        return Plugin_Continue;
+    }
     if(voteInProgress)
     {
         PrintToChat(client, "Can't start vote, another vote is in progress, try next round");
@@ -543,7 +607,7 @@ public Action StartVoteMenu(int client, int args)
 public Action StartVote(int client, int args)
 {
     Menu menu = new Menu(MenuHandler);
-    menu.SetTitle("Do you want to play next round with custom settings? %s",g_modeName[currentModeIndex]);
+    menu.SetTitle("Do you want to play next round with custom settings? %s",g_modeName[voteModeIndex]);
     menu.AddItem("yes", "Yes");
     menu.AddItem("no", "No");
     menu.ExitButton = false;
@@ -564,5 +628,90 @@ void WarmupEndOperations()
     for(int i =0; i < MODE_NAME_SIZE; ++i)
     {
         ServerCommand(g_warmupEndActions[i]);
+    }
+}
+public Action Command_Health(int client, int args)
+{
+    if(args != 1)
+    {
+        ReplyToCommand(client, "Error - Usage: sm_health <ammount>");
+        return Plugin_Handled;
+    }
+    customHealthRound = true;
+    char buff[5];
+    GetCmdArg(1, buff, sizeof(buff));
+    hp = StringToInt(buff);
+    for (int i = 1; i <= MaxClients; i++)
+    {
+        SetHp(i);
+    }
+    return Plugin_Handled;
+}
+
+stock void SetHp(int client)
+{
+    if(IsValidClient(client))
+    {
+        char buffer[64];
+        GetClientName(client,buffer,sizeof(buffer));
+        PrintToServer("Set %d hp for %s",hp,buffer);
+        SetEntityHealth(client, hp);
+    }
+}
+public Action Command_NoScope(int client, int args)
+{
+    if(args != 1)
+    {
+        ReplyToCommand(client, "Error - Usage: sm_noscope <0|1 >");
+        return Plugin_Handled;
+    }
+    char buff[5];
+    GetCmdArg(1, buff, sizeof(buff));
+    
+    int noscope = StringToInt(buff);
+    if(noscope)
+    {
+        customNoScopeRound = true;
+    }
+    else
+        customNoScopeRound = false;
+    
+    for (int i = 1; i <= MaxClients; i++)
+    {
+        if(IsValidClient(i))
+        {
+            if(customNoScopeRound)
+                SDKHook(i, SDKHook_PreThink, OnPreThink);
+            else
+                SDKUnhook(i, SDKHook_PreThink, OnPreThink);
+        }
+
+    }
+    return Plugin_Handled;
+}
+
+public Action OnPreThink(int client)
+{
+    if(IsValidClient(client))
+        if(IsPlayerAlive(client))
+        {
+            SetNoScope(GetPlayerWeaponSlot(client, 0));
+        }
+    return Plugin_Handled;
+}
+
+stock void SetNoScope(int weapon)
+{
+    if (IsValidEdict(weapon))
+    {
+        char classname[MAX_NAME_LENGTH];
+        if (GetEdictClassname(weapon, classname, sizeof(classname))
+         || StrEqual(classname[7], "ssg08") || StrEqual(classname[7], "aug")
+         || StrEqual(classname[7], "sg550") || StrEqual(classname[7], "sg552")
+         || StrEqual(classname[7], "sg556") || StrEqual(classname[7], "awp")
+         || StrEqual(classname[7], "scar20") || StrEqual(classname[7], "g3sg1"))
+        {
+                SetEntDataFloat(weapon, m_flNextSecondaryAttack, GetGameTime() + 1.0);
+        }
     }
 }
