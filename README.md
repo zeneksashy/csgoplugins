@@ -2,7 +2,7 @@
 My plugins for cs go(only one so far)
 
 ## Custom Round Plugin
- * Warmup Rounds At map beginging
+ * Warmup Rounds At map beginning
  * Custom Rounds Vote 
  * No Scope Rounds
  * Danger Zone melee weapons
