@@ -46,8 +46,8 @@ public Plugin myinfo =
     name = "Custom Round plugin",
     author = "Zenek",
     description = "Plugin allows to call vote to make next round use custom settings",
-    version = "1.6",
-    url = "https://github.com/zeneksashy/csgoplugins"
+    version = "1.8",
+    url = "https://github.com/zeneksashy/csgoplugins "
 };
 
 stock bool IsValidClient(int client)
@@ -189,7 +189,7 @@ public void OnPluginStart()
     HookEvent("player_spawn", Event_PlayerSpawn);
     HookEvent("round_prestart",Event_RoundStart);
     HookEvent("round_end",Event_RoundEnd);
-    //HookEvent("player_team",Event_PlayerJoinedTeam);
+    HookEvent("player_team",Event_PlayerJoinedTeam);
 
     _mode = Default;
 
@@ -253,10 +253,11 @@ public Action CS_OnBuyCommand(int iClient, const char[] chWeapon)
 
 public void Event_PlayerJoinedTeam(Event event, const char[] name, bool dontBroadcast)
 {
-    if(customRoundStarted)
-    {
-        PlayerCheckAndUpdateWeaponOperation(GetClientOfUserId(event.GetInt("userid")));
-    }
+    // if(customRoundStarted)
+    // {
+        // PlayerCheckAndUpdateWeaponOperation(GetClientOfUserId(event.GetInt("userid")));
+    // }
+    for (int i = 1; i <= MaxClients; i++) if (IsClientInGame(i)) OnClientPutInServer(i);
 }
 public Action Event_PlayerSpawn(Event hEvent, const char[] chName, bool bDontBroadcast)
 {
@@ -715,3 +716,97 @@ stock void SetNoScope(int weapon)
         }
     }
 }
+
+public void OnClientPutInServer(int client)
+{
+    SDKHook(client, SDKHook_WeaponCanUse, Hook_WeaponCanUse);
+}
+
+public Action Hook_WeaponCanUse(int client, int weapon)
+{
+    char classname[64];
+    GetEntityClassname(weapon, classname, sizeof classname);
+    
+    if ((StrEqual(classname, "weapon_melee") || StrEqual(classname, "weapon_fists")) && !(HasWeapon(client, "weapon_melee") || HasWeapon(client, "weapon_knife")))
+        EquipPlayerWeapon(client, weapon);
+}
+
+
+public Action OnPlayerRunCmd(int client, int &buttons, int &impulse, float vel[3], float angles[3], int &weapon)
+{
+    if(!customNoScopeRound)
+        return Plugin_Continue
+
+    //Client is not valid
+    if (!IsValidClient(client) || !IsPlayerAlive(client))
+    {
+        return Plugin_Continue;
+    }
+
+    // if (g_iTeam < 4 && g_iTeam != GetClientTeam(client))
+    // {
+        // return Plugin_Continue;
+    // }
+
+    //Attempting to use right click
+    if (buttons & IN_ATTACK2)
+    {
+        char buffer[128];
+        
+        int item = GetEntPropEnt(client, Prop_Send, "m_hActiveWeapon");
+        
+        // prevent log errors
+        if(item == -1)
+            return Plugin_Continue;
+        
+        GetEntityClassname(item, buffer, sizeof(buffer));
+        
+        if (StrEqual(buffer, "weapon_fists", false) || StrEqual(buffer, "weapon_melee", false))
+        {
+            buttons &= ~IN_ATTACK2; //Don't press attack 2
+            return Plugin_Changed;
+        }
+    }
+
+    return Plugin_Continue;
+}
+
+
+stock bool HasWeapon(int client, const char[] classname)
+{
+    int index;
+    int weapon;
+    char sName[64];
+    
+    while((weapon = GetNextWeapon(client, index)) != -1)
+    {
+        GetEdictClassname(weapon, sName, sizeof(sName));
+        if (StrEqual(sName, classname))
+            return true;
+    }
+    return false;
+}
+
+stock int GetNextWeapon(int client, int &weaponIndex)
+{
+    static int weaponsOffset = -1;
+    if (weaponsOffset == -1)
+        weaponsOffset = FindDataMapInfo(client, "m_hMyWeapons");
+    
+    int offset = weaponsOffset + (weaponIndex * 4);
+    
+    int weapon;
+    while (weaponIndex < 48) 
+    {
+        weaponIndex++;
+        
+        weapon = GetEntDataEnt2(client, offset);
+        
+        if (IsValidEdict(weapon)) 
+            return weapon;
+        
+        offset += 4;
+    }
+    
+    return -1;
+} 
